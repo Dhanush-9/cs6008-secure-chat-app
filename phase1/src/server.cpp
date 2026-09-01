@@ -192,6 +192,8 @@ int main(){
         return 1;
     }
 
+    std::cout << "Server started and listening on port " << PORT << "...\n";
+
     ClientRegistry registry;
 
     while(true){
