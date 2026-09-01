@@ -1,0 +1,40 @@
+Prompt1:
+Phase 2 - Client-Server Confidentiality via Diffie–Hellman
+3.1 Requirements
+● Implement the Diffie-Hellman key exchange yourself, using modular exponentiation. You must use a standard,
+published prime group (e.g., an RFC 3526 MODP group) rather than generating your own prime.
+● Each client must perform an independent DH key exchange with the server when it connects: one exchange for C1
+<-> S, and a separate, independent exchange for C2 <-> S.
+● Derive a symmetric AES key from the raw DH shared secret using a cryptographic hash function (do NOT use the
+raw shared secret directly as a key). Why should we hash the key? Mention this in your report.
+● Encrypt every subsequent message on each link with an authenticated encryption mode (AES-GCM is
+recommended). This should include not just chat messages but also any login/registration exchange your application
+performs, if applicable.
+3.2 Required Verification
+● On both ends of a given DH exchange, print a hash-based fingerprint of the derived shared secret (never print the
+raw secret or the key itself). Show with evidence that both sides computed the identical fingerprint.
+● Repeat the Wireshark capture from Phase 1 on the same traffic. Confirm the message content is no longer readable,
+and include a screenshot showing the ciphertext where Phase 1 showed plaintext.
+● Demonstrate that your AES-GCM usage detects tampering: modify a single byte of a captured ciphertext and
+attempt to have your client process it. Show that this is rejected (e.g., an authentication/decryption failure) rather
+than silently producing corrupted output.
+
+I have to complete this assignment, tell me what and where all do i need to change in my code functionality wise.
+
+Prompt2:
+I made another folder named phase2 which is just copy of phase1. Instead of giving me code directly, guide me to write code myself. Don't give direct code!!! Suggest all the work needs to be done in parts, like first is to be implement dh.h and dh.cpp and use it. Then in next step we will go to hashing and other things.
+
+Prompt3: 
+why BIGNUM is used and what is it? 
+
+Prompt4:
+how does openssl maintains BIGNUM if its size is unknows
+
+Prompt5:
+how to use it, give use of functions related to it also
+
+Promt6:
+I dno't understand use of ctx, explain with example, also why do i need to assign and free memory again and again, can't i use smart pointers here?
+
+Prompt7:
+Where to find the prime number to use for DH according to the assignment?
