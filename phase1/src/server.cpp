@@ -62,13 +62,6 @@ bool handle_message(int client_fd, std::string& username, Message& message, Clie
     }
 
     if(message.type == MessageType::QUIT){
-        Message response;
-
-        response.type = MessageType::OK;
-        response.content = "QUIT";
-
-        send_frame(client_fd, serialize_message(response));
-
         return false;
     }
 
@@ -204,8 +197,6 @@ int main(){
             std::cerr << "Accept Failed\n";
             continue;
         }
-
-        std::cout << "Client connected\n";
 
         std::thread client_thread(handle_client, client_fd, std::ref(registry));
         client_thread.detach();

@@ -30,6 +30,8 @@ void receive_messages(int sock_fd){
 
         if(message.type == MessageType::FROM){
             std::cout << "\n[" << message.sender << "]" << message.content << "\n";
+            std::cout << "> ";
+            std::flush(std::cout);
         }
 
         if(message.type == MessageType::USERS){
@@ -41,14 +43,23 @@ void receive_messages(int sock_fd){
             while(std::getline(ss, user, '|')){
                 std::cout << " " << user << "\n";
             }
+
+            std::cout << "> ";
+            std::flush(std::cout);
         }
 
         if(message.type == MessageType::ERROR){
             std::cout << "ERROR: " << message.content << "\n";
+
+            std::cout << "> ";
+            std::flush(std::cout);
         }
 
         if(message.type == MessageType::OK){
             std::cout << "\n" << message.content << "\n";
+
+            std::cout << "> ";
+            std::flush(std::cout);
         }
     }
 }
@@ -150,16 +161,17 @@ int main()
 
     std::string current_chat;
 
+    std::cout << "> ";
+
     while (true)
     {
-        std::cout << "> ";
-
         std::string input;
         std::getline(std::cin, input);
 
         std::stringstream ss(input);
 
         if(input.empty()){
+            std::cout << "> ";
             continue;
         }
 
@@ -187,7 +199,8 @@ int main()
 
             std::cout << "Current chat: " << current_chat << "\n";
 
-            continue;
+            std::cout << "> ";
+            std::flush(std::cout);
         }
 
         else if(command == "/quit"){
@@ -233,6 +246,9 @@ int main()
             }
 
             current_chat = username;
+
+            std::cout << "> ";
+            std::flush(std::cout);
         }
 
         else{
@@ -253,6 +269,9 @@ int main()
                 close(sock_fd);
                 return 1;
             }
+
+            std::cout << "> ";
+            std::flush(std::cout);
         }
     }
 }
