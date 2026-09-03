@@ -1,3 +1,5 @@
 .vscode/
 *.exe
-phase2_claude/
+*.key
+*.csr
+*.srl
