@@ -1,5 +1,7 @@
-#include "protocol.hpp"
-#include "framing.hpp"
+#include "../network/protocol.hpp"
+#include "../network/framing.hpp"
+#include "../crypto/dh.hpp"
+#include "../crypto/crypto.hpp"
 
 #include <iostream>
 #include <string>
@@ -10,14 +12,21 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <vector>
+#include <cstdint>
+
 const char *SERVER_IP = "127.0.0.1";
 const int PORT = 5000;
 
-void receive_messages(int sock_fd){
+void receive_messages(int sock_fd, const std::vector<uint8_t>& aes_key) {
     while(true){
         std::string payload;
 
-        if(receive_frame(sock_fd, payload) == false){
+        // if(receive_frame(sock_fd, payload) == false){
+        //     break;
+        // } //plain msg
+        if(!receive_frame_enc(sock_fd, payload, aes_key)){
+            std::cerr << "\n[Connection closed or tamper detected — exiting receiver]\n";
             break;
         }
 
@@ -90,6 +99,50 @@ int main()
 
     std::cout << "Connection to server established.\n";
 
+    //DH Handshake
+    DHkeypair dh = dh_generate_keypair();
+
+    //Send client's public key to server
+    Message dh_hello;
+    dh_hello.type = MessageType::DH_HELLO;
+    dh_hello.content = BignumUniquePtrToHexString(dh.public_key);
+
+    if(!send_frame(sock_fd, serialize_message(dh_hello))){
+        std::cerr << "Failed to send DH hello.\n";
+        close(sock_fd);
+        return 1;
+    }
+
+    //Receive the server's public key
+    std::string serverDHHelloPayload;
+    if(!receive_frame(sock_fd, serverDHHelloPayload)){
+        std::cerr << "Failed to receive server's public key.\n";
+        close(sock_fd);
+        return 1;
+    }
+
+    Message serverPublicKeyMsg;
+    if(parse_message(serverDHHelloPayload, serverPublicKeyMsg) == false){
+        std::cerr << "Invalid message from server.\n";
+        close(sock_fd);
+        return 1;
+    }
+
+    // //Generate shared secret
+    // BignumUniquePtr sharedSecret = dhGetSecret(dh, serverPublicKeyMsg.content);
+
+    // //Generate AES key
+    // std::vector<uint8_t> aes_key = deriveAesKey(sharedSecret);
+
+    BignumUniquePtr serverPubKey = customHexToBignumUniquePtr(serverPublicKeyMsg.content);
+    std::vector<uint8_t> sharedSecret = dhGetSecret(dh, serverPubKey);
+    std::vector<uint8_t> aes_key = deriveAesKey(sharedSecret);
+
+    //Print FingerPrint
+    print_fingerprint(aes_key);
+
+    std::cout << "DH handshake complete. Secure channel established. All further communication is encrypted.\n\n";
+
     std::cout << "\nLogin first.\n";
     std::cout << "Usage: login <username>\n\n";
 
@@ -121,7 +174,13 @@ int main()
         login.type = MessageType::LOGIN;
         login.sender = username;
 
-        if (send_frame(sock_fd, serialize_message(login)) == false)
+        // if (send_frame(sock_fd, serialize_message(login)) == false)
+        // {
+        //     std::cerr << "Failed to Login.\n";
+        //     close(sock_fd);
+        //     return 1;
+        // }
+        if (!send_frame_enc(sock_fd, serialize_message(login), aes_key))
         {
             std::cerr << "Failed to Login.\n";
             close(sock_fd);
@@ -129,7 +188,13 @@ int main()
         }
 
         std::string response_payload;
-        if (receive_frame(sock_fd, response_payload) == false)
+        // if (receive_frame(sock_fd, response_payload) == false)
+        // {
+        //     std::cerr << "Server disconnected.\n";
+        //     close(sock_fd);
+        //     return 1;
+        // }
+        if (!receive_frame_enc(sock_fd, response_payload, aes_key))
         {
             std::cerr << "Server disconnected.\n";
             close(sock_fd);
@@ -156,7 +221,7 @@ int main()
         }
     }
 
-    std::thread receiver_thread(receive_messages, sock_fd);
+    std::thread receiver_thread(receive_messages, sock_fd, aes_key);
     receiver_thread.detach();
 
     std::string current_chat;
@@ -186,7 +251,7 @@ int main()
 
             message.type = MessageType::WHO;
 
-            send_frame(sock_fd, serialize_message(message));
+            send_frame_enc(sock_fd, serialize_message(message), aes_key);
         }
 
         else if(command == "/chat"){
@@ -208,7 +273,7 @@ int main()
 
             message.type = MessageType::QUIT;
 
-            send_frame(sock_fd, serialize_message(message));
+            send_frame_enc(sock_fd, serialize_message(message), aes_key);
 
             close(sock_fd);
             return 0;
@@ -239,7 +304,7 @@ int main()
             message.receiver = username;
             message.content = content;
 
-            if(send_frame(sock_fd, serialize_message(message)) == false){
+            if(send_frame_enc(sock_fd, serialize_message(message), aes_key) == false){
                 std::cerr << "Failed to send message.\n";
                 close(sock_fd);
                 return 1;
@@ -264,7 +329,7 @@ int main()
             message.receiver = current_chat;
             message.content = input;
 
-            if(send_frame(sock_fd, serialize_message(message)) == false){
+            if(send_frame_enc(sock_fd, serialize_message(message), aes_key) == false){
                 std::cerr << "Failed to send message.\n";
                 close(sock_fd);
                 return 1;

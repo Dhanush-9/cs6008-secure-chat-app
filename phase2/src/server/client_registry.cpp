@@ -1,13 +1,13 @@
 #include "client_registry.hpp"
 
-bool ClientRegistry::add_client(const std::string& username, int sock_fd){
+bool ClientRegistry::add_client(const std::string& username, int sock_fd, const std::vector<uint8_t>& aes_key){
     std::lock_guard<std::mutex> lock(mutex);
 
     if(clients.find(username) != clients.end()){
         return false;
     }
 
-    clients[username] = sock_fd;
+    clients[username] = ClientInfo{sock_fd, aes_key};
 
     return true;
 }
@@ -29,7 +29,15 @@ int ClientRegistry::get_socket(const std::string& username) const {
 
     auto it = clients.find(username);
 
-    return (it == clients.end())? -1 : it->second;
+    return (it == clients.end())? -1 : it->second.sock_fd;
+}
+
+std::vector<uint8_t> ClientRegistry::get_key(const std::string& username) const {
+    std::lock_guard<std::mutex> lock(mutex);
+
+    auto it = clients.find(username);
+
+    return (it == clients.end())? std::vector<uint8_t>() : it->second.aes_key;
 }
 
 std::vector<std::string> ClientRegistry::get_users() const {

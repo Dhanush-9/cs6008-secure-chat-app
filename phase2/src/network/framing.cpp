@@ -79,3 +79,57 @@ bool receive_frame(int sock_fd, std::string& payload){
 
     return true;
 }
+
+//Encrypted Send and Receive Frame
+
+bool send_frame_enc(int sock_fd, const std::string& payload,
+                    const std::vector<uint8_t>& key){
+    // Convert string to bytes
+    std::vector<uint8_t> plaintext(payload.begin(), payload.end());
+
+    // Encrypt: result = [IV(12)] + [ciphertext] + [tag(16)]
+    std::vector<uint8_t> encrypted = aes_gcm_encrypt(key, plaintext);
+
+    // Send as a length-prefixed raw binary frame
+    uint32_t length = static_cast<uint32_t>(encrypted.size());
+    uint32_t network_len = htonl(length);
+
+    if(!send_all(sock_fd, reinterpret_cast<const char*>(&network_len), sizeof(network_len))){
+        return false;
+    }
+
+    if(!send_all(sock_fd, reinterpret_cast<const char*>(encrypted.data()), encrypted.size())){
+        return false;
+    }
+
+    return true;
+}
+
+bool receive_frame_enc(int sock_fd, std::string& payload,
+                       const std::vector<uint8_t>& key){
+    // Read 4-byte length
+    uint32_t network_len;
+    if(!recv_all(sock_fd, reinterpret_cast<char*>(&network_len), sizeof(network_len))){
+        return false;
+    }
+
+    uint32_t length = ntohl(network_len);
+
+    // Read encrypted blob
+    std::vector<uint8_t> encrypted(length);
+    if(!recv_all(sock_fd, reinterpret_cast<char*>(encrypted.data()), length)){
+        return false;
+    }
+
+    // Decrypt — throws std::runtime_error on GCM authentication failure
+    try {
+        std::vector<uint8_t> plaintext = aes_gcm_decrypt(key, encrypted);
+        payload.assign(plaintext.begin(), plaintext.end());
+    } catch (const std::exception& e) {
+        std::cerr << "\n[SECURITY] Decryption failed: " << e.what() << "\n";
+        std::cerr << "[SECURITY] Possible tampering detected — dropping message.\n";
+        return false;
+    }
+
+    return true;
+}

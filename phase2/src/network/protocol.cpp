@@ -113,6 +113,16 @@ bool parse_message(const std::string& payload, Message& message) {
         return true;
     }
 
+    if(type == "DH_HELLO"){
+        std::string pubKeyHex = payload.substr(position + 1);
+        if(pubKeyHex.empty()){
+            return false;
+        }
+        message.type = MessageType::DH_HELLO;
+        message.content = pubKeyHex;
+        return true;
+    }
+
     return false;
 }
 
@@ -148,6 +158,10 @@ std::string serialize_message(const Message& message){
 
     if(message.type == MessageType::FROM){
         return "FROM|" + message.sender + "|" + message.content;
+    }
+
+    if(message.type == MessageType::DH_HELLO){
+        return "DH_HELLO|" + message.content;
     }
 
     return "";

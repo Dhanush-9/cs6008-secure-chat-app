@@ -1,5 +1,7 @@
-#include "protocol.hpp"
-#include "framing.hpp"
+#include "../network/protocol.hpp"
+#include "../network/framing.hpp"
+#include "../crypto/dh.hpp"
+#include "../crypto/crypto.hpp"
 #include "client_registry.hpp"
 
 #include <iostream>
@@ -13,7 +15,7 @@
 
 const int PORT = 5000;
 
-bool handle_message(int client_fd, std::string& username, Message& message, ClientRegistry& registry){
+bool handle_message(int client_fd, std::string& username, Message& message, ClientRegistry& registry, const std::vector<uint8_t>& aes_key){
     if(message.type == MessageType::WHO){
         std::vector<std::string> users = registry.get_users();
 
@@ -31,7 +33,7 @@ bool handle_message(int client_fd, std::string& username, Message& message, Clie
         response.type = MessageType::USERS;
         response.content = who_content;
 
-        send_frame(client_fd, serialize_message(response));
+        send_frame_enc(client_fd, serialize_message(response), aes_key);
         return true;
     }
 
@@ -44,10 +46,12 @@ bool handle_message(int client_fd, std::string& username, Message& message, Clie
             response.type = MessageType::ERROR;
             response.content = "User not found";
 
-            send_frame(client_fd, serialize_message(response));
+            send_frame_enc(client_fd, serialize_message(response), aes_key);
 
             return true;
         }
+
+        std::vector<uint8_t> receiverKey = registry.get_key(message.receiver);
 
         Message outgoing;
 
@@ -56,7 +60,7 @@ bool handle_message(int client_fd, std::string& username, Message& message, Clie
         outgoing.content = message.content;
 
         //situation where this fails?
-        send_frame(receiver_fd, serialize_message(outgoing));
+        send_frame_enc(receiver_fd, serialize_message(outgoing), receiverKey);
 
         return true;
     }
@@ -69,9 +73,58 @@ bool handle_message(int client_fd, std::string& username, Message& message, Clie
 }
 
 void handle_client(int client_fd, ClientRegistry& registry){
+
+    //DH Handshake with Client
+    DHkeypair dh = dh_generate_keypair();
+
+    //receiving receiver's public key.
+    std::string clientPubKeyPayload;
+    if(receive_frame(client_fd, clientPubKeyPayload) == false){
+        std::cerr << "Failed to receive client's public key\n";
+        close(client_fd);
+        return;
+    }
+
+    Message clientPubKeyMessage;
+    if(parse_message(clientPubKeyPayload, clientPubKeyMessage) == false){
+        std::cerr << "Failed to parse client's public key message\n";
+        close(client_fd);
+        return;
+    }
+
+    if(clientPubKeyMessage.type != MessageType::DH_HELLO){
+        std::cerr << "Expected DH_HELLO message, but received a different type\n";
+        close(client_fd);
+        return;
+    }
+
+    BignumUniquePtr clientPubKey = customHexToBignumUniquePtr(clientPubKeyMessage.content);
+    if(!clientPubKey){
+        std::cerr << "Failed to convert client's public key from hex to BIGNUM\n";
+        close(client_fd);
+        return;
+    }
+
+    //Sending server's public key.
+    Message serverPubKeyMessage;
+    serverPubKeyMessage.type = MessageType::DH_HELLO;
+    serverPubKeyMessage.content = BignumUniquePtrToHexString(dh.public_key);
+
+    if(send_frame(client_fd, serialize_message(serverPubKeyMessage)) == false){
+        std::cerr << "Failed to send server's public key\n";
+        close(client_fd);
+        return;
+    }
+
+    //Calculating shared secret
+    std::vector<uint8_t> sharedSecret = dhGetSecret(dh, clientPubKey);
+    std::vector<uint8_t> aes_key = deriveAesKey(sharedSecret);
+
+    print_fingerprint(aes_key, "Server (fd=" + std::to_string(client_fd) + ")");
+
     std::string payload;
 
-    if(receive_frame(client_fd, payload) == false){
+    if(receive_frame_enc(client_fd, payload, aes_key) == false){
         close(client_fd);
         return;
     }
@@ -84,7 +137,7 @@ void handle_client(int client_fd, ClientRegistry& registry){
         response.type = MessageType::ERROR;
         response.content = "Invalid message";
 
-        send_frame(client_fd, serialize_message(response));
+        send_frame_enc(client_fd, serialize_message(response), aes_key);
         close(client_fd);
         return;
     }
@@ -95,7 +148,7 @@ void handle_client(int client_fd, ClientRegistry& registry){
         response.type = MessageType::ERROR;
         response.content = "Login required";
 
-        send_frame(client_fd, serialize_message(response));
+        send_frame_enc(client_fd, serialize_message(response), aes_key);
         close(client_fd);
         return;
     }
@@ -103,7 +156,7 @@ void handle_client(int client_fd, ClientRegistry& registry){
     //message is LOGIN, register the client
     std::string username = message.sender;
 
-    if(registry.add_client(username, client_fd) == false){
+    if(registry.add_client(username, client_fd, aes_key) == false){
         //username exists already
         Message response;
         response.type = MessageType::ERROR;
@@ -111,7 +164,7 @@ void handle_client(int client_fd, ClientRegistry& registry){
         response.content = "Username already exists";
         std::string response_payload = serialize_message(response);
 
-        send_frame(client_fd, response_payload);
+        send_frame_enc(client_fd, response_payload, aes_key);
 
         close(client_fd);
         return;
@@ -123,14 +176,14 @@ void handle_client(int client_fd, ClientRegistry& registry){
     response.type = MessageType::OK;
     response.content = "Login successful";
 
-    send_frame(client_fd, serialize_message(response));
+    send_frame_enc(client_fd, serialize_message(response), aes_key);
 
     std::cout << "Client \"" << username << "\" logged in.\n";
 
     while(true){
         std::string payload;
 
-        if(receive_frame(client_fd, payload) == false){
+        if(receive_frame_enc(client_fd, payload, aes_key) == false){
             break;
         }
 
@@ -142,11 +195,11 @@ void handle_client(int client_fd, ClientRegistry& registry){
             response.type = MessageType::ERROR;
             response.content = "Invalid message";
 
-            send_frame(client_fd, serialize_message(response));
+            send_frame_enc(client_fd, serialize_message(response), aes_key);
             continue;
         }
 
-        if(handle_message(client_fd, username, message, registry) == false){
+        if(handle_message(client_fd, username, message, registry, aes_key) == false){
             break;
         }
     }
