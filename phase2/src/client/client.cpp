@@ -16,7 +16,8 @@
 #include <cstdint>
 
 const char *SERVER_IP = "127.0.0.1";
-const int PORT = 5000;
+//const int PORT = 5000; //for server, not proxy
+const int PORT = 5001; //for connecting to proxy exclusively
 
 void receive_messages(int sock_fd, const std::vector<uint8_t>& aes_key) {
     while(true){
