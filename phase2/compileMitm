@@ -1,0 +1,1 @@
+g++ -std=c++17 -Wall -Wextra src/proxy/proxy.cpp src/network/protocol.cpp src/network/framing.cpp src/crypto/crypto.cpp src/crypto/dh.cpp -o mitm.exe -lssl -lcrypto -lpthread
