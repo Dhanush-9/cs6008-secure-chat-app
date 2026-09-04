@@ -35,38 +35,38 @@ void print_fingerprint(const std::vector<uint8_t>& aes_key, const std::string& l
 
 std::vector<uint8_t> aes_gcm_encrypt(const std::vector<uint8_t>& key, const std::vector<uint8_t>& plaintext) {
     std::vector<uint8_t> iv(GCM_IV_LEN);
-    if (RAND_bytes(iv.data(), GCM_IV_LEN) != 1) //create a random IV for each message.
+    if (RAND_bytes(iv.data(), GCM_IV_LEN) != 1)
         throw std::runtime_error("RAND_bytes failed");
 
-    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new(); //ctx is a structure that holds the state of the encryption operation. It is used to manage the encryption process, including the key, IV, and any other parameters needed for the encryption algorithm.
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
     if (!ctx) throw std::runtime_error("EVP_CIPHER_CTX_new failed");
 
     // Initialize AES-128-GCM encryption
-    if (EVP_EncryptInit_ex(ctx, EVP_aes_128_gcm(), nullptr, nullptr, nullptr) != 1) //last 2 are nullptr now because we first need to tell which algo will be using i.e. gcm then only we tell it about IV in next calls.
+    if (EVP_EncryptInit_ex(ctx, EVP_aes_128_gcm(), nullptr, nullptr, nullptr) != 1)
         throw std::runtime_error("EVP_EncryptInit_ex (cipher) failed");
 
-    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, GCM_IV_LEN, nullptr) != 1) //before giving IV, give the length of IV to the ctx. EVP_CTRL_GCM_SET_IVLEN is a constant that tells the function to set the IV length for GCM mode. GCM mode requires a specific IV length, which is typically 12 bytes (96 bits).
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, GCM_IV_LEN, nullptr) != 1)
         throw std::runtime_error("EVP_CIPHER_CTX_ctrl (IV len) failed");
 
-    if (EVP_EncryptInit_ex(ctx, nullptr, nullptr, key.data(), iv.data()) != 1) //now call init again to set IV, Key in ctx.
+    if (EVP_EncryptInit_ex(ctx, nullptr, nullptr, key.data(), iv.data()) != 1)
         throw std::runtime_error("EVP_EncryptInit_ex (key+iv) failed");
 
     // Encrypt plaintext
-    std::vector<uint8_t> ciphertext(plaintext.size()); //AES-GCM creates ciphertext of same length as plaintext.
+    std::vector<uint8_t> ciphertext(plaintext.size());
     int out_len = 0;
 
     if (!plaintext.empty()) {
         if (EVP_EncryptUpdate(ctx, ciphertext.data(), &out_len,
-                              plaintext.data(), (int)plaintext.size()) != 1) //actual encryption happens here. EVP_EncryptUpdate encrypts the plaintext and writes the ciphertext to the output buffer. It also updates the out_len variable with the number of bytes written to the output buffer.
+                              plaintext.data(), (int)plaintext.size()) != 1)
             throw std::runtime_error("EVP_EncryptUpdate failed");
     }
 
     int final_len = 0;
-    if (EVP_EncryptFinal_ex(ctx, ciphertext.data() + out_len, &final_len) != 1) //don't know why encryption happening in 2 steps.
+    if (EVP_EncryptFinal_ex(ctx, ciphertext.data() + out_len, &final_len) != 1)
         throw std::runtime_error("EVP_EncryptFinal_ex failed");
 
     // Retrieve GCM tag
-    std::vector<uint8_t> tag(GCM_TAG_LEN); //now extract tag from ctx.
+    std::vector<uint8_t> tag(GCM_TAG_LEN);
     if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, GCM_TAG_LEN, tag.data()) != 1)
         throw std::runtime_error("EVP_CIPHER_CTX_ctrl (get tag) failed");
 
@@ -79,7 +79,7 @@ std::vector<uint8_t> aes_gcm_encrypt(const std::vector<uint8_t>& key, const std:
     result.insert(result.end(), ciphertext.begin(), ciphertext.begin() + out_len + final_len);
     result.insert(result.end(), tag.begin(), tag.end());
 
-    return result; 
+    return result;
 }
 
 std::vector<uint8_t> aes_gcm_decrypt(const std::vector<uint8_t>& key,
