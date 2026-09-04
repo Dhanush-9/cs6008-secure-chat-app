@@ -2,10 +2,12 @@
 #include "../network/framing.hpp"
 #include "../crypto/dh.hpp"
 #include "../crypto/crypto.hpp"
+#include "../crypto/server_auth.hpp"
 
 #include <iostream>
 #include <string>
 #include <thread>
+#include <fstream>
 #include <sstream>
 #include <map>
 #include <mutex>
@@ -264,6 +266,18 @@ void refresher_func(int sock_fd, const std::vector<uint8_t>& server_key, const s
     }
 }
 
+std::string read_file(const std::string& path){
+    std::ifstream file(path);
+
+    if(!file){
+        return "";
+    }
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+
+    return buffer.str();
+}
 
 int main(int argc, char *argv[])
 {
@@ -295,6 +309,100 @@ int main(int argc, char *argv[])
     }
 
     std::cout << "Connection to server established.\n";
+
+    //Phase 3 Server Authentication
+    std::string server_cert_payload;
+
+    if(!receive_frame(sock_fd, server_cert_payload)){
+        std::cerr << "Failed to receive server certificate.\n";
+        close(sock_fd);
+        return 1;
+    }
+
+    Message cert_message;
+
+    if(!parse_message(server_cert_payload, cert_message)){
+        std::cerr << "Invalid certificate message from server.\n";
+        close(sock_fd);
+        return 1;
+    }
+
+    if(cert_message.type != MessageType::CERT){
+        std::cerr << "Expected server certificate.\n";
+        close(sock_fd);
+        return 1;
+    }
+
+    std::string server_certificate = cert_message.content;
+
+    //read trusted CA certificate
+    std::string ca_certificate = read_file("src/ca/ca.crt");
+
+    if(ca_certificate.empty()){
+        std::cerr << "Failed to read CA certificate.\n";
+        close(sock_fd);
+        return 1;
+    }
+
+    const std::string EXPECTED_SERVER_CN = "SecureChat Server";
+
+    //validate server certificate
+    if(!verify_server_certificate(server_certificate, ca_certificate, EXPECTED_SERVER_CN)){
+        std::cerr << "Server certificate validation failed.\n";
+        close(sock_fd);
+        return 1;
+    }
+
+    std::cout << "Server certificate successfully validated.\n";
+
+    //proof of possession
+
+    std::string challenge = generate_challenge();
+
+    Message challenge_message;
+
+    challenge_message.type = MessageType::CHALLENGE;
+    challenge_message.content = challenge;
+
+    if(!send_frame(sock_fd, serialize_message(challenge_message))){
+        std::cerr << "Failed to send challenge.\n";
+        close(sock_fd);
+        return 1;
+    }
+
+    //receive server's response
+
+    std::string challenge_resp_payload;
+
+    if(!receive_frame(sock_fd, challenge_resp_payload)){
+        std::cerr << "Failed to receive challenge response.\n";
+        close(sock_fd);
+        return 1;
+    }
+
+    Message challenge_response;
+
+    if(!parse_message(challenge_resp_payload, challenge_response)){
+        std::cerr << "Invalid challenge response from server.\n";
+        close(sock_fd);
+        return 1;
+    }
+
+    if(challenge_response.type != MessageType::CHALLENGE_RESP){
+        std::cerr << "Expected challenge response from server.\n";
+        close(sock_fd);
+        return 1;
+    }
+
+    if(!verify_challenge_response(challenge, challenge_response.content, server_certificate)){
+        std::cerr << "Server proof-of-possession failed.\n";
+        std::cerr << "Closing connection.\n";
+        close(sock_fd);
+        return 1;
+    }
+
+    std::cout << "proof-of-possession verified.\n";
+    std::cout << "Server authentication complete.\n\n";
 
     DHkeypair dh = dh_generate_keypair();
 

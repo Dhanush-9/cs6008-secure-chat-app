@@ -123,6 +123,45 @@ bool parse_message(const std::string& payload, Message& message) {
         return true;
     }
 
+    if(type == "CERT"){
+        std::string certificate = payload.substr(position + 1);
+
+        if(certificate.empty()){
+            return false;
+        }
+
+        message.type = MessageType::CERT;
+        message.content = certificate;
+
+        return true;
+    }
+
+    if(type == "CHALLENGE"){
+        std::string challenge = payload.substr(position + 1);
+
+        if(challenge.empty()){
+            return false;
+        }
+
+        message.type = MessageType::CHALLENGE;
+        message.content = challenge;
+
+        return true;
+    }
+
+    if(type == "CHALLENGE_RESP"){
+        std::string signature = payload.substr(position + 1);
+
+        if(signature.empty()){
+            return false;
+        }
+
+        message.type = MessageType::CHALLENGE_RESP;
+        message.content = signature;
+
+        return true;
+    }
+
     // Phase 4: E2E_INIT|<receiver>|<pubkey_hex>
     //          E2E_REPLY|<receiver>|<pubkey_hex>
     //          E2E_MSG|<receiver>|<hex_ciphertext>
@@ -187,6 +226,18 @@ std::string serialize_message(const Message& message){
 
     if(message.type == MessageType::DH_HELLO){
         return "DH_HELLO|" + message.content;
+    }
+
+    if(message.type == MessageType::CERT){
+        return "CERT|" + message.content;
+    }
+
+    if(message.type == MessageType::CHALLENGE){
+        return "CHALLENGE|" + message.content;
+    }
+
+    if(message.type == MessageType::CHALLENGE_RESP){
+        return "CHALLENGE_RESP|" + message.content;
     }
 
     // // Phase 4: E2E relay messages — receiver + hex payload
