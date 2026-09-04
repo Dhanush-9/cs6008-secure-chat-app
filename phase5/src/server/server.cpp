@@ -39,8 +39,6 @@ bool handle_message(int client_fd,
     }
 
     if(message.type == MessageType::MSG){
-        // Log plain-text relay — server CAN read this (pre-E2E evidence)
-        //log_relay("MSG", username, message.receiver, message.content);
 
         int receiver_fd = registry.get_socket(message.receiver);
         if(receiver_fd < 0){
@@ -74,7 +72,6 @@ bool handle_message(int client_fd,
     return true;
 }
 
-// Per-client connection handler
 void handle_client(int client_fd, ClientRegistry& registry){
 
     // DH Handshake with Client (establishes client<->server channel key)
