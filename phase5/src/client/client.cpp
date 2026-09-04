@@ -43,6 +43,14 @@ static std::vector<uint8_t> hex_to_bytes(const std::string& hex) {
     return result;
 }
 
+static std::string current_timestamp() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t t = std::chrono::system_clock::to_time_t(now);
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
+    return std::string(buf);
+}
+
 struct E2EState {
     // username -> established E2E AES key
     std::map<std::string, std::vector<uint8_t>> aes_keys;
@@ -247,6 +255,10 @@ void refresher_func(int sock_fd, const std::vector<uint8_t>& server_key, const s
             msg.receiver = peer;
             msg.content  = "__E2E_INIT__|" + pub_hex;
             send_frame_enc(sock_fd, serialize_message(msg), server_key);
+
+            std::cout << "\n[REKEY] Sent refresh keys request to " << peer
+                      << " at " << current_timestamp() << "\n> ";
+
             std::flush(std::cout);
         }
     }
