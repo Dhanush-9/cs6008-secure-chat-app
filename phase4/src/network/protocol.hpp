@@ -13,9 +13,8 @@ enum class MessageType {
     FROM,
     DH_HELLO,
     // Phase 4: client-to-client end-to-end encryption handshake & messaging
-    E2E_INIT,   // initiator sends its DH public key to a peer via server relay
-    E2E_REPLY,  // responder sends its DH public key back via server relay
-    E2E_MSG     // inner-encrypted (E2E) chat message relayed by server
+    // E2E_INIT,   // initiator sends its DH public key to a peer via server relay
+    // E2E_REPLY,  // responder sends its DH public key back via server relay
 };
 
 const char SEPARATOR = '|';

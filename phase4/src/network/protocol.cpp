@@ -126,28 +126,27 @@ bool parse_message(const std::string& payload, Message& message) {
     // Phase 4: E2E_INIT|<receiver>|<pubkey_hex>
     //          E2E_REPLY|<receiver>|<pubkey_hex>
     //          E2E_MSG|<receiver>|<hex_ciphertext>
-    if(type == "E2E_INIT" || type == "E2E_REPLY" || type == "E2E_MSG"){
-        size_t next_pos = payload.find("|", position + 1);
-        if(next_pos == std::string::npos){
-            return false;
-        }
+    // if(type == "E2E_INIT" || type == "E2E_REPLY"){
+    //     size_t next_pos = payload.find("|", position + 1);
+    //     if(next_pos == std::string::npos){
+    //         return false;
+    //     }
 
-        std::string receiver = payload.substr(position + 1, next_pos - position - 1);
-        std::string content  = payload.substr(next_pos + 1);
+    //     std::string receiver = payload.substr(position + 1, next_pos - position - 1);
+    //     std::string content  = payload.substr(next_pos + 1);
 
-        if(receiver.empty() || content.empty()){
-            return false;
-        }
+    //     if(receiver.empty() || content.empty()){
+    //         return false;
+    //     }
 
-        message.receiver = receiver;
-        message.content  = content;
+    //     message.receiver = receiver;
+    //     message.content  = content;
 
-        if(type == "E2E_INIT")  message.type = MessageType::E2E_INIT;
-        else if(type == "E2E_REPLY") message.type = MessageType::E2E_REPLY;
-        else                     message.type = MessageType::E2E_MSG;
+    //     if(type == "E2E_INIT")  message.type = MessageType::E2E_INIT;
+    //     else if(type == "E2E_REPLY") message.type = MessageType::E2E_REPLY;
 
-        return true;
-    }
+    //     return true;
+    // }
 
     return false;
 }
@@ -190,18 +189,15 @@ std::string serialize_message(const Message& message){
         return "DH_HELLO|" + message.content;
     }
 
-    // Phase 4: E2E relay messages — receiver + hex payload
-    if(message.type == MessageType::E2E_INIT){
-        return "E2E_INIT|" + message.receiver + "|" + message.content;
-    }
+    // // Phase 4: E2E relay messages — receiver + hex payload
+    // if(message.type == MessageType::E2E_INIT){
+    //     return "E2E_INIT|" + message.receiver + "|" + message.content;
+    // }
 
-    if(message.type == MessageType::E2E_REPLY){
-        return "E2E_REPLY|" + message.receiver + "|" + message.content;
-    }
+    // if(message.type == MessageType::E2E_REPLY){
+    //     return "E2E_REPLY|" + message.receiver + "|" + message.content;
+    // }
 
-    if(message.type == MessageType::E2E_MSG){
-        return "E2E_MSG|" + message.receiver + "|" + message.content;
-    }
 
     return "";
 }

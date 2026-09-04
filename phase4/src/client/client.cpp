@@ -19,9 +19,6 @@
 #include <vector>
 #include <cstdint>
 
-const char* SERVER_IP = "127.0.0.1";
-const int   PORT      = 5000;
-
 static std::string bytes_to_hex(const std::vector<uint8_t>& bytes) {
     std::ostringstream oss;
     oss << std::hex << std::setfill('0');
@@ -43,15 +40,15 @@ static std::vector<uint8_t> hex_to_bytes(const std::string& hex) {
 }
 
 struct E2EState {
-    // // username -> established E2E AES key
-    // std::map<std::string, std::vector<uint8_t>> sessions;
-    // // username -> pending DH keypair (awaiting E2E_REPLY)
-    // std::map<std::string, DHkeypair> pending;
+    // username -> established E2E AES key
+    std::map<std::string, std::vector<uint8_t>> aes_keys;
+    // username -> pending DH keypair (awaiting E2E_REPLY)
+    std::map<std::string, DHkeypair> pending;
 
-    std::string username;
-    std::vector<uint8_t> aes_key;
-    DHkeypair dh;
-    bool e2e_established = false;
+    // std::string username;  //made for keeping track of only current user.
+    // std::vector<uint8_t> aes_key;
+    // DHkeypair dh;
+    // bool e2e_established = false;
     std::mutex mtx;
 };
 
@@ -83,8 +80,8 @@ void receive_messages(int sock_fd,
             const std::string& content = message.content;
 
             // --- E2E_INIT: peer wants to establish an E2E session with us ---
-            if(content.substr(0, 9) == "E2E_INIT|"){
-                std::string peer_pub_hex = content.substr(9);
+            if(content.substr(0, 13) == "__E2E_INIT__|"){
+                std::string peer_pub_hex = content.substr(13);
 
                 // Generate our DH keypair
                 DHkeypair our_dh = dh_generate_keypair();
@@ -96,7 +93,9 @@ void receive_messages(int sock_fd,
 
                 {
                     std::lock_guard<std::mutex> lk(e2e.mtx);
-                    e2e.aes_key = e2e_key;
+                    // e2e.username = from;
+                    // e2e.aes_key = e2e_key;
+                    e2e.aes_keys[from] = e2e_key;
                 }
 
                 std::cout << "\n[E2E] Key-exchange initiated by " << from << ".\n";
@@ -107,19 +106,19 @@ void receive_messages(int sock_fd,
 
                 // Send our public key back as E2E_REPLY (relayed via server)
                 Message reply;
-                reply.type     = MessageType::E2E_REPLY;
+                reply.type     = MessageType::MSG;
                 reply.receiver = from;
-                reply.content  = BignumUniquePtrToHexString(our_dh.public_key);
+                reply.content  = "__E2E_ACK__|" + BignumUniquePtrToHexString(our_dh.public_key);
                 send_frame_enc(sock_fd, serialize_message(reply), server_key);
 
-                e2e.e2e_established = true;
+                //e2e.e2e_established = true;
 
                 continue;
             }
 
             // --- E2E_REPLY: initiator receives responder's public key ---
-            if(content.substr(0, 10) == "E2E_REPLY|"){
-                std::string peer_pub_hex = content.substr(10);
+            if(content.substr(0, 12) == "__E2E_ACK__|"){
+                std::string peer_pub_hex = content.substr(12);
 
                 std::lock_guard<std::mutex> lk(e2e.mtx);
                 // auto it = e2e.pending.find(from);
@@ -129,7 +128,7 @@ void receive_messages(int sock_fd,
                 //     std::flush(std::cout);
                 //     continue;
                 // }
-                if(e2e.username != from){
+                if(e2e.pending.find(from) == e2e.pending.end()){
                     std::cout << "\n[E2E] Unexpected E2E_REPLY from " << from << " (no pending handshake).\n";
                     std::cout << "> ";
                     std::flush(std::cout);
@@ -137,12 +136,13 @@ void receive_messages(int sock_fd,
                 }
 
                 BignumUniquePtr peer_pub = customHexToBignumUniquePtr(peer_pub_hex);
-                std::vector<uint8_t> secret  = dhGetSecret(e2e.dh, peer_pub);
+                std::vector<uint8_t> secret  = dhGetSecret(e2e.pending[from], peer_pub);
                 std::vector<uint8_t> e2e_key = deriveAesKey(secret);
 
-                e2e.aes_key = e2e_key;
-                //e2e.pending.erase(it);
-                e2e.e2e_established = true;
+                //e2e.aes_key = e2e_key;
+                e2e.aes_keys[from] = e2e_key;
+                e2e.pending.erase(from);
+                //e2e.e2e_established = true;
 
                 std::cout << "\n[E2E] Reply received from " << from << ".\n";
                 print_fingerprint(e2e_key, "[E2E with " + from + "] Fingerprint");
@@ -153,20 +153,20 @@ void receive_messages(int sock_fd,
             }
 
             // --- E2E_MSG: receive an inner-encrypted message ---
-            if(content.substr(0, 8) == "E2E_MSG|"){
-                std::string hex_blob = content.substr(8);
+            if(content.substr(0, 12) == "__E2E_MSG__|"){
+                std::string hex_blob = content.substr(12);
 
                 std::vector<uint8_t> e2e_key;
                 {
                     std::lock_guard<std::mutex> lk(e2e.mtx);
-                    if(!e2e.e2e_established || e2e.username != from){
+                    if(e2e.aes_keys.find(from) == e2e.aes_keys.end()){
                         std::cout << "\n[E2E] Received E2E_MSG from " << from
                                   << " but no session exists. Ignoring.\n";
                         std::cout << "> ";
                         std::flush(std::cout);
                         continue;
                     }
-                    e2e_key = e2e.aes_key;
+                    e2e_key = e2e.aes_keys[from];
                 }
 
                 try {
@@ -219,8 +219,18 @@ void receive_messages(int sock_fd,
     }
 }
 
-int main()
+int main(int argc, char *argv[])
 {
+
+    if(argc != 3){
+        std::cerr << "Usage: "<< argv[0] << " <server_ip> <port>\n";
+        return 1;
+    }
+
+    char *SERVER_IP = argv[1];
+    int PORT = std::atoi(argv[2]);
+
+
     int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
     if(sock_fd < 0){
         std::cerr << "Socket failed\n";
@@ -326,6 +336,8 @@ int main()
     }
 
     E2EState e2e;
+    e2e.aes_keys.clear();
+    e2e.pending.clear();
 
     std::thread receiver_thread(receive_messages, sock_fd, std::cref(server_key), std::ref(e2e)); //ref is used because normally thread creates a copy of the argument, ref tells thread explicitly to use the reference of the argument instead of copying it.
     receiver_thread.detach();
@@ -336,6 +348,7 @@ int main()
     while(true){
         std::string input;
         std::getline(std::cin, input);
+        bool directMessage = false;
 
         if(input.empty()){
             std::cout << "> ";
@@ -365,13 +378,13 @@ int main()
             std::cout << "Current chat: " << current_chat << "\n> ";
             std::flush(std::cout);
 
-            std::lock_guard<std::mutex> lk(e2e.mtx);
-            if(e2e.username != argument)
-            {
-                e2e.aes_key.clear();
-                e2e.e2e_established = false;
-                e2e.username.clear();
-            }
+            // std::lock_guard<std::mutex> lk(e2e.mtx);
+            // if(e2e.username != argument)
+            // {
+            //     e2e.aes_key.clear();
+            //     e2e.e2e_established = false;
+            //     e2e.username.clear();
+            // }
 
             continue;
         }
@@ -392,18 +405,17 @@ int main()
 
             {
                 std::lock_guard<std::mutex> lk(e2e.mtx);
-                // store keypair so we can complete the handshake on E2E_REPLY
-                //e2e.pending.emplace(peer, std::move(our_dh));
-                e2e.dh = std::move(our_dh);
-                e2e.username = peer;
-                e2e.e2e_established = false;
+                e2e.pending.emplace(peer, std::move(our_dh));
+                //e2e.dh = std::move(our_dh);
+                //e2e.username = peer;
+                //e2e.e2e_established = false;
             }
 
             // Send E2E_INIT to peer via server relay
             Message init_msg;
-            init_msg.type     = MessageType::E2E_INIT;
+            init_msg.type     = MessageType::MSG; // relayed via server as a normal MSG
             init_msg.receiver = peer;
-            init_msg.content  = our_pub_hex;
+            init_msg.content  = "__E2E_INIT__|" + our_pub_hex;
 
             send_frame_enc(sock_fd, serialize_message(init_msg), server_key);
 
@@ -438,50 +450,7 @@ int main()
             }
 
             current_chat = peer;
-
-            // Check for active E2E session
-            std::vector<uint8_t> e2e_key;
-            {
-                std::lock_guard<std::mutex> lk(e2e.mtx);
-                if(e2e.e2e_established && e2e.username == peer)
-                    e2e_key = e2e.aes_key;
-                else{
-                    e2e.aes_key.clear();
-                    e2e.e2e_established = false;
-                    e2e.username.clear();
-                }
-            }
-
-            if(!e2e_key.empty()){
-                // Inner AES-GCM encryption with E2E key
-                std::vector<uint8_t> plaintext(msg_content.begin(), msg_content.end());
-                std::vector<uint8_t> ciphertext = aes_gcm_encrypt(e2e_key, plaintext);
-                std::string hex_blob = bytes_to_hex(ciphertext);
-
-                Message m;
-                m.type     = MessageType::E2E_MSG;
-                m.receiver = peer;
-                m.content  = hex_blob;
-
-                std::cout << "[E2E] Sending encrypted message to " << peer << "\n";
-                send_frame_enc(sock_fd, serialize_message(m), server_key);
-            } else {
-                // Plain message (pre-E2E)
-                Message m;
-                m.type     = MessageType::MSG;
-                m.receiver = peer;
-                m.content  = msg_content;
-
-                if(!send_frame_enc(sock_fd, serialize_message(m), server_key)){
-                    std::cerr << "Failed to send message.\n";
-                    close(sock_fd);
-                    return 1;
-                }
-            }
-
-            std::cout << "> ";
-            std::flush(std::cout);
-            continue;
+            directMessage = true;
         }
 
         // Plain text input — send to current_chat
@@ -495,8 +464,9 @@ int main()
         std::vector<uint8_t> e2e_key;
         {
             std::lock_guard<std::mutex> lk(e2e.mtx);
-            if(e2e.e2e_established && e2e.username == current_chat)
-                e2e_key = e2e.aes_key;
+            if(e2e.aes_keys.find(current_chat) != e2e.aes_keys.end()){
+                e2e_key = e2e.aes_keys[current_chat];
+            }
         }
 
         if(!e2e_key.empty()){
@@ -506,9 +476,9 @@ int main()
             std::string hex_blob = bytes_to_hex(ciphertext);
 
             Message m;
-            m.type     = MessageType::E2E_MSG;
+            m.type     = MessageType::MSG;
             m.receiver = current_chat;
-            m.content  = hex_blob;
+            m.content  = "__E2E_MSG__|" + hex_blob;
 
             std::cout << "[E2E] Sending encrypted message to " << current_chat << "\n";
             send_frame_enc(sock_fd, serialize_message(m), server_key);
@@ -517,7 +487,14 @@ int main()
             Message m;
             m.type     = MessageType::MSG;
             m.receiver = current_chat;
-            m.content  = input;
+            if(directMessage) 
+            {
+                m.content = input.substr(input.find(' ')+1); // remove @username prefix
+            }
+            else 
+            {
+                m.content  = input;
+            }
 
             if(!send_frame_enc(sock_fd, serialize_message(m), server_key)){
                 std::cerr << "Failed to send message.\n";

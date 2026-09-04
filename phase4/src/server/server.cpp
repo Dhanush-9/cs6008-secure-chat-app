@@ -35,40 +35,6 @@ static void log_relay(const std::string& tag,
     std::cout.flush();
 }
 
-// ---------------------------------------------------------------------------
-// Forward an E2E handshake/data frame to the destination client.
-// The server wraps it in a FROM and forwards the opaque blob — it never sees
-// the C1<->C2 key and cannot decrypt the inner payload.
-// ---------------------------------------------------------------------------
-static bool relay_e2e(int src_fd,
-                      const std::string& src_user,
-                      const std::string& tag,
-                      const Message& message,
-                      ClientRegistry& registry,
-                      const std::vector<uint8_t>& src_key)
-{
-    int dst_fd = registry.get_socket(message.receiver);
-    if(dst_fd < 0){
-        Message err;
-        err.type    = MessageType::ERROR;
-        err.content = "User '" + message.receiver + "' not found";
-        send_frame_enc(src_fd, serialize_message(err), src_key);
-        return true;
-    }
-
-    std::vector<uint8_t> dst_key = registry.get_key(message.receiver);
-
-    // FROM|<sender>|<tag>|<content>  — receiver's FROM handler picks up the tag prefix
-    Message outgoing;
-    outgoing.type    = MessageType::FROM;
-    outgoing.sender  = src_user;
-    outgoing.content = tag + "|" + message.content;
-
-    log_relay(tag, src_user, message.receiver, message.content);
-
-    send_frame_enc(dst_fd, serialize_message(outgoing), dst_key);
-    return true;
-}
 
 // ---------------------------------------------------------------------------
 // Main per-client message dispatcher
@@ -98,7 +64,7 @@ bool handle_message(int client_fd,
 
     if(message.type == MessageType::MSG){
         // Log plain-text relay — server CAN read this (pre-E2E evidence)
-        log_relay("MSG", username, message.receiver, message.content);
+        //log_relay("MSG", username, message.receiver, message.content);
 
         int receiver_fd = registry.get_socket(message.receiver);
         if(receiver_fd < 0){
@@ -116,25 +82,13 @@ bool handle_message(int client_fd,
         outgoing.sender  = username;
         outgoing.content = message.content;
 
+        std::cout << "Message Log: FROM ["
+          << username << "] TO ["
+          << message.receiver << "]: "
+          << message.content << "\n";
+
         send_frame_enc(receiver_fd, serialize_message(outgoing), receiverKey);
         return true;
-    }
-
-    // -----------------------------------------------------------------------
-    // Phase 4: relay E2E handshake and encrypted chat.
-    // Server is a pure relay — it forwards opaque blobs and cannot derive
-    // the C1<->C2 shared key.
-    // -----------------------------------------------------------------------
-    if(message.type == MessageType::E2E_INIT){
-        return relay_e2e(client_fd, username, "E2E_INIT", message, registry, aes_key);
-    }
-
-    if(message.type == MessageType::E2E_REPLY){
-        return relay_e2e(client_fd, username, "E2E_REPLY", message, registry, aes_key);
-    }
-
-    if(message.type == MessageType::E2E_MSG){
-        return relay_e2e(client_fd, username, "E2E_MSG", message, registry, aes_key);
     }
 
     if(message.type == MessageType::QUIT){
