@@ -11,7 +11,11 @@ enum class MessageType {
     ERROR,
     USERS,
     FROM,
-    DH_HELLO
+    DH_HELLO,
+
+    CERT,
+    CHALLENGE,
+    CHALLENGE_RESP
 };
 
 const char SEPARATOR = '|';

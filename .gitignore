@@ -1,6 +1,3 @@
 .vscode/
 *.exe
-*.key
-*.csr
-*.srl
 *.txt

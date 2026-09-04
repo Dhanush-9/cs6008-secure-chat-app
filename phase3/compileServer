@@ -1,1 +1,1 @@
-g++ -std=c++17 -Wall -Wextra src/server/server.cpp src/server/client_registry.cpp src/network/protocol.cpp src/network/framing.cpp src/crypto/crypto.cpp src/crypto/dh.cpp -o server.exe -lssl -lcrypto -lpthread
+g++ -std=c++17 -Wall -Wextra src/server/server.cpp src/server/client_registry.cpp src/network/protocol.cpp src/network/framing.cpp src/crypto/crypto.cpp src/crypto/dh.cpp  src/crypto/server_auth.cpp -o server.exe -lssl -lcrypto -lpthread
