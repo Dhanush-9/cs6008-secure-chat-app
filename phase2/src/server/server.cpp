@@ -59,6 +59,11 @@ bool handle_message(int client_fd, std::string& username, Message& message, Clie
         outgoing.sender = username;
         outgoing.content = message.content;
 
+        std::cout << "Message Log: FROM ["
+          << username << "] TO ["
+          << message.receiver << "]: "
+          << message.content << "\n";
+
         //situation where this fails?
         send_frame_enc(receiver_fd, serialize_message(outgoing), receiverKey);
 

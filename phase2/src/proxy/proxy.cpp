@@ -18,8 +18,8 @@
 const int PROXY_PORT = 5001;
 
 // Address and port of the REAL server
-const char* REAL_SERVER_IP   = "127.0.0.1";
-const int   REAL_SERVER_PORT = 5000;
+char* REAL_SERVER_IP;
+int REAL_SERVER_PORT;
 
 int connect_to_server() {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -194,7 +194,15 @@ void handle_connection(int client_fd) {
     std::cout << "[MITM] Session (fd=" << client_fd << ") ended.\n";
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+
+    if(argc !=  3) {
+        std::cout << "[MITM] Usage: " << argv[0] << " <real_server_ip> <real_server_port>\n";
+        return 1;
+    }
+    REAL_SERVER_IP   = argv[1];
+    REAL_SERVER_PORT = std::atoi(argv[2]);
+
     int proxy_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (proxy_fd < 0) {
         std::cerr << "[MITM] socket() failed\n";

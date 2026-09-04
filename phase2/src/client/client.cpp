@@ -15,10 +15,6 @@
 #include <vector>
 #include <cstdint>
 
-const char *SERVER_IP = "127.0.0.1";
-//const int PORT = 5000; //for server, not proxy
-const int PORT = 5001; //for connecting to proxy exclusively
-
 void receive_messages(int sock_fd, const std::vector<uint8_t>& aes_key) {
     while(true){
         std::string payload;
@@ -74,8 +70,22 @@ void receive_messages(int sock_fd, const std::vector<uint8_t>& aes_key) {
     }
 }
 
-int main()
+int main(int argc, char *argv[])
 {
+
+    if(argc != 3){
+        std::cerr << "Usage: "<< argv[0] << " <server_ip> <port>\n";
+        return 1;
+    }
+
+    char *SERVER_IP = argv[1];
+    int PORT = std::atoi(argv[2]);
+
+    if(PORT <= 0 || PORT > 65535){
+        std::cerr << "Invalid port: " << argv[2] << "\n";
+        return 1;
+    }
+
     int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
 
     if (sock_fd < 0)
