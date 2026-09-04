@@ -12,6 +12,10 @@ enum class MessageType {
     USERS,
     FROM,
     DH_HELLO,
+
+    CERT,
+    CHALLENGE,
+    CHALLENGE_RESP
     // Phase 4: client-to-client end-to-end encryption handshake & messaging
     // E2E_INIT,   // initiator sends its DH public key to a peer via server relay
     // E2E_REPLY,  // responder sends its DH public key back via server relay

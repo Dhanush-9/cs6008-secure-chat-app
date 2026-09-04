@@ -2,11 +2,14 @@
 #include "../network/framing.hpp"
 #include "../crypto/dh.hpp"
 #include "../crypto/crypto.hpp"
+#include "../crypto/server_auth.hpp"
 #include "client_registry.hpp"
 
 #include <iostream>
 #include <string>
 #include <thread>
+#include <fstream>
+#include <sstream>
 
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -74,8 +77,100 @@ bool handle_message(int client_fd,
     return true;
 }
 
+std::string read_file(const std:: string& path){
+    std::ifstream file(path);
+
+    if(!file) return "";
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+
+    return buffer.str();
+}
+
 // Per-client connection handler
 void handle_client(int client_fd, ClientRegistry& registry){
+    // PHASE 3: Server Authentication
+
+    //load server certificate
+    std::string server_cert = read_file("src/server/server.crt");
+
+    if(server_cert.empty()) {
+        std::cerr << "Failed to load server certificate\n";
+        close(client_fd);
+        return;
+    }
+
+    //load server private key
+    std::string server_private_key = read_file("src/server/server.key");
+
+    if(server_private_key.empty()) {
+        std::cerr << "Failed to load server private key\n";
+        close(client_fd);
+        return;
+    }
+
+    //send server.crt to client
+    Message cert_message;
+
+    cert_message.type = MessageType::CERT;
+    cert_message.content = server_cert;
+
+    if(send_frame(client_fd, serialize_message(cert_message)) == false){
+        std::cerr << "Failed to send server certificate\n";
+        close(client_fd);
+        return;
+    }
+
+    std::cout<<"Server certificate successfully sent to Client.\n";
+
+    //recieve challenge from client
+    std::string challenge_payload;
+
+    if(receive_frame(client_fd, challenge_payload) == false){
+        std::cerr << "Failed to receive challenge\n";
+        close(client_fd);
+        return;
+    }
+
+    Message challenge_message;
+    if(parse_message(challenge_payload, challenge_message) == false){
+        std::cerr << "Failed to parse challenge message\n";
+        close(client_fd);
+        return;
+    }
+
+    if (challenge_message.type != MessageType::CHALLENGE) {
+        std::cerr << "Expected CHALLENGE message\n";
+        close(client_fd);
+        return;
+    }
+
+    //sign challenge using server's private key
+    std::string signature = sign_challenge(challenge_message.content, server_private_key);
+
+    if (signature.empty()) {
+        std::cerr << "Failed to sign challenge\n";
+        close(client_fd);
+        return;
+    }
+
+    //send challenge response
+    Message challenge_response;
+
+    challenge_response.type = MessageType::CHALLENGE_RESP;
+    challenge_response.content = signature;
+
+    if(send_frame(client_fd, serialize_message(challenge_response)) == false){
+        std::cerr << "Failed to send challenge response\n";
+        close(client_fd);
+        return;
+    }
+
+    std::cout << "Signed the challenge and successfully sent the response.\n";
+
+
+    std::cout << "Server authentication complete.\n";
 
     // DH Handshake with Client (establishes client<->server channel key)
     DHkeypair dh = dh_generate_keypair();
